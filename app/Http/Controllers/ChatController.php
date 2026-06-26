@@ -82,30 +82,34 @@ class ChatController extends Controller
     }
 
     private function botReply(string $message)
-{
-    try {
+    {
+        try {
 
-        $symptoms = array_map('trim', explode(',', $message));
+            $symptoms = array_map('trim', explode(',', $message));
 
-        $response = Http::timeout(10)->post(
-            'https://booted-change-rebuild.ngrok-free.dev/predict',
-            [
-                'symptoms' => $symptoms,
-            ]
-        );
+            $response = Http::timeout(10)->post(
+                'https://booted-change-rebuild.ngrok-free.dev/predict',
+                [
+                    'symptoms' => $symptoms,
+                ]
+            );
 
-        return [
-            "http_status" => $response->status(),
-            "body" => $response->body(),
-            "json" => $response->json(),
-        ];
+            if ($response->successful()) {
+                return $response->json();
+            }
 
-    } catch (\Exception $e) {
+            return [
+                'status' => false,
+                'message' => 'Could not analyze symptoms. Please try again.'
+            ];
 
-        return [
-            "exception" => $e->getMessage()
-        ];
+        } catch (\Exception $e) {
 
+            return [
+                'status' => false,
+                'message' => 'AI service is currently unavailable.'
+            ];
+
+        }
     }
-}
 }
