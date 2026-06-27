@@ -6,9 +6,17 @@ use App\Models\Chat;
 use App\Models\Message;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use App\Services\TranslationService;
 
 class ChatController extends Controller
 {
+    protected $translator;
+
+    public function __construct(TranslationService $translator)
+    {
+        $this->translator = $translator;
+    }
+
     public function register(Request $request)
     {
         return response()->json([
@@ -30,19 +38,21 @@ class ChatController extends Controller
     }
 
     public function sendMessage(Request $request)
-    {
-        try {
+{
+    $request->validate([
+        'chat_id' => 'required|exists:chats,id',
+        'message' => 'required|string'
+]);
 
-            $request->validate([
-                'chat_id' => 'required|exists:chats,id',
-                'message' => 'required|string'
-            ]);
+    try {
 
-            $userMessage = Message::create([
-                'chat_id' => $request->chat_id,
-                'sender' => 'user',
-                'message' => $request->message
-            ]);
+           $userMessage = Message::create([
+               'chat_id' => $request->chat_id,
+               'sender' => 'user',
+               'message' => $request->message
+        ]);
+
+        dd("قبل botReply");
 
             $aiResult = $this->botReply($request->message);
 
@@ -60,13 +70,8 @@ class ChatController extends Controller
             ]);
 
         } catch (\Exception $e) {
-
-            return response()->json([
-                'status' => false,
-                'error' => $e->getMessage()
-            ], 500);
-
-        }
+    dd($e->getMessage(), $e->getTraceAsString());
+}
     }
 
     public function getMessages(int $chat_id)
@@ -87,15 +92,22 @@ class ChatController extends Controller
 
             $symptoms = array_map('trim', explode(',', $message));
 
-            $response = Http::timeout(10)->post(
-            'https://booted-change-rebuild.ngrok-free.dev/predict',
-                [
-                    'symptoms' => $symptoms,
-                ]
-            );
+            dd($symptoms);
+
+            $response = Http::timeout(10)->post('https://wistful-scrunch-candied.ngrok-free.dev/predict', [
+    'symptoms' => $symptoms,
+        ]
+        );
 
             if ($response->successful()) {
-                return $response->json();
+
+                dd($response->json());
+
+                $result = $response->json();
+
+                $result = $this->translator->translateResponse($result);
+
+                return $result;
             }
 
             return [
@@ -104,12 +116,7 @@ class ChatController extends Controller
             ];
 
         } catch (\Exception $e) {
-
-            return [
-                'status' => false,
-                'message' => 'AI service is currently unavailable.'
-            ];
-
-        }
+    dd($e->getMessage());
+}
     }
 }
