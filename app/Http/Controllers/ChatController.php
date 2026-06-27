@@ -88,7 +88,7 @@ class ChatController extends Controller
             $symptoms = array_map('trim', explode(',', $message));
 
             $response = Http::timeout(10)->post(
-            'http://127.0.0.1:8000/predict',
+            'https://booted-change-rebuild.ngrok-free.dev/predict',
                 [
                     'symptoms' => $symptoms,
                 ]
