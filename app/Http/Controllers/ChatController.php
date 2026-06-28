@@ -4,26 +4,23 @@ namespace App\Http\Controllers;
 
 use App\Models\Chat;
 use App\Models\Message;
+use App\Services\TranslationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use App\Services\TranslationService;
+
 
 class ChatController extends Controller
 {
-    protected $translator;
+    private TranslationService $translator;
+
+    private string $aiUrl = 'https://booted-change-rebuild.ngrok-free.dev/predict';
 
     public function __construct(TranslationService $translator)
     {
         $this->translator = $translator;
     }
 
-    public function register(Request $request)
-    {
-        return response()->json([
-            'message' => 'User registered successfully',
-            'data' => $request->all()
-        ]);
-    }
+
 
     public function createChat(Request $request)
     {
@@ -38,28 +35,29 @@ class ChatController extends Controller
     }
 
     public function sendMessage(Request $request)
-{
-    $request->validate([
-        'chat_id' => 'required|exists:chats,id',
-        'message' => 'required|string'
-]);
-
-    try {
-
-           $userMessage = Message::create([
-               'chat_id' => $request->chat_id,
-               'sender' => 'user',
-               'message' => $request->message
+    {
+       $request->validate([
+           'chat_id' => 'required|exists:chats,id',
+           'message' => 'required|string',
+           'lang' => 'nullable|in:ar,en',
         ]);
 
-        dd("قبل botReply");
+        try {
 
-            $aiResult = $this->botReply($request->message);
+            $userMessage = Message::create([
+                'chat_id' => $request->chat_id,
+                'sender' => 'user',
+                'message' => $request->message
+            ]);
 
+           $aiResult = $this->botReply(
+               $request->message,
+               $request->lang ?? 'en'
+            );
             $botMessage = Message::create([
                 'chat_id' => $request->chat_id,
                 'sender' => 'bot',
-                'message' => json_encode($aiResult)
+                'message' => json_encode($aiResult, JSON_UNESCAPED_UNICODE)
             ]);
 
             return response()->json([
@@ -69,9 +67,14 @@ class ChatController extends Controller
                 'bot_message' => $botMessage
             ]);
 
-        } catch (\Exception $e) {
-    dd($e->getMessage(), $e->getTraceAsString());
-}
+        } catch (\Throwable $e) {
+
+            return response()->json([
+                'status' => false,
+                'error' => $e->getMessage()
+            ], 500);
+
+        }
     }
 
     public function getMessages(int $chat_id)
@@ -86,37 +89,65 @@ class ChatController extends Controller
         ]);
     }
 
-    private function botReply(string $message)
+    public function testAiConnection()
     {
         try {
 
-            $symptoms = array_map('trim', explode(',', $message));
+            $response = Http::timeout(20)
+                ->withHeaders([
+                    'ngrok-skip-browser-warning' => 'true'
+                ])
+                ->post($this->aiUrl, [
+                    'symptoms' => [
+                        'headache',
+                        'fever'
+                    ]
+                ]);
 
-            dd($symptoms);
+            return response()->json([
+                'status' => $response->status(),
+                'success' => $response->successful(),
+                'body' => $response->json()
+            ]);
 
-            $response = Http::timeout(10)->post('https://wistful-scrunch-candied.ngrok-free.dev/predict', [
-    'symptoms' => $symptoms,
-        ]
-        );
+        } catch (\Throwable $e) {
 
-            if ($response->successful()) {
-
-                dd($response->json());
-
-                $result = $response->json();
-
-                $result = $this->translator->translateResponse($result);
-
-                return $result;
-            }
-
-            return [
+            return response()->json([
                 'status' => false,
-                'message' => 'Could not analyze symptoms. Please try again.'
-            ];
+                'error' => $e->getMessage()
+            ], 500);
 
-        } catch (\Exception $e) {
-    dd($e->getMessage());
-}
+        }
+    }
+
+    private function botReply(string $message, string $lang = 'en'): array
+    {
+        $symptoms = array_map('trim', explode(',', $message));
+
+        $response = Http::timeout(20)
+            ->withHeaders([
+                'ngrok-skip-browser-warning' => 'true'
+            ])
+            ->post($this->aiUrl, [
+                'symptoms' => $symptoms
+            ]);
+
+        if (!$response->successful()) {
+            throw new \Exception(
+                'AI Error: ' .
+                $response->status() .
+                ' - ' .
+                $response->body()
+            );
+        }
+
+        
+        $result = $response->json();
+
+        if ($lang === 'ar') {
+            $result = $this->translator->translateResponse($result);
+        }
+
+        return $result;
     }
 }
